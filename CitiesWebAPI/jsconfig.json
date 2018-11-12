@@ -1,0 +1,6 @@
+{
+    "ConnectionString": {
+        "DataContext": "Server=(localdb)\\mssqllocaldb;Database=CitiesWebAPI;Trusted_Connection=True;"
+    }
+
+}
