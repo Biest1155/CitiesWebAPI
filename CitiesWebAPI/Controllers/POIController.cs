@@ -1,9 +1,12 @@
 ﻿using CitiesWebAPI.Models;
+using Microsoft.AspNetCore.JsonPatch;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+
 namespace CitiesWebAPI.Controllers
 {
     [Route("api/[controller]")]
@@ -17,56 +20,82 @@ namespace CitiesWebAPI.Controllers
         }
 
         [HttpGet]
-            [Route ("POI/{id}")]
-            public ActionResult<List<Cities>> GetAllPoi(int id)
-            {
-                 return new ObjectResult(_db.cities.FirstOrDefault(x => x.Id == id).pointOfInterests);
-            }
+        [Route("{id}")]
+        public ActionResult<List<Cities>> GetAllPoi([FromRoute]int id)
+        {
+            return new ObjectResult(_db.cities.Include(x => x.pointOfInterests).FirstOrDefault(x => x.Id == id));
+        }
 
-            [HttpGet]
-            [Route("POI/{cityId}/{poiId}")]
-            public IActionResult Get(int cityId, int poiId)
-            {
-            if (_db.cities.Where(x => x.Id == cityId).Count() == 0 || !_db.cities.FirstOrDefault(x => x.Id == cityId).pointOfInterests.Exists(x => x.Id == poiId))
+        [HttpGet]
+        [Route("{cityId}/{poiId}")]
+        public IActionResult Get([FromRoute]int cityId, [FromRoute] int poiId)
+        {
+            
+            if (!_db.cities.ToList().Exists(x => x.Id == cityId) || !_db.cities.Include(x => x.pointOfInterests).FirstOrDefault(x => x.Id == cityId).pointOfInterests.Exists(x => x.Id == poiId))
             {
                 return NotFound();
             }
-            return new OkObjectResult(_db.cities.FirstOrDefault(x => x.Id == cityId).pointOfInterests.FirstOrDefault(x => x.Id == poiId));
-            }
+            return new OkObjectResult((_db.cities.Include(x => x.pointOfInterests).FirstOrDefault(x => x.Id == cityId).pointOfInterests.FirstOrDefault(x => x.Id == poiId)));
+        }
 
-            [HttpPost]
-            public IActionResult PostPoi([FromBody] int id, PointOfInterest poi)
+        [HttpPost]
+        [Route("{id}")]
+        public IActionResult PostPoi([FromRoute]int id, [FromBody] PointOfInterest poi)
+        {
+            if (!ModelState.IsValid)
             {
-                if (!ModelState.IsValid)
-                {
-                    return BadRequest(ModelState);
-                }
-                _db.SaveChanges();
-                _db.cities.FirstOrDefault(x => x.Id == id).pointOfInterests.Add(poi);
-                return CreatedAtAction("GetAllPoi", poi);
+                return BadRequest(ModelState);
             }
+            var findCity = _db.cities.Include(x=> x.pointOfInterests).FirstOrDefault(x => x.Id == id);
+            findCity.pointOfInterests.Add(poi);
+            _db.Update(findCity);
+            _db.SaveChanges();
+            return CreatedAtAction("GetAllPoi", poi);
+        }
 
-            [HttpPut]
-            public IActionResult Update(int id, PointOfInterest poi)
+        [HttpPut]
+        [Route("{id}")]
+        public IActionResult Update([FromRoute]int id, PointOfInterest poi)
+        {
+            var lastPoi = _db.poi.FirstOrDefault(x => x.Id == id);
+            if (lastPoi is null)
             {
-                if (_db.cities.Where(x => x.Id == id).Count() == 0)
-                {
-                    return NotFound();
-                }
-                Cities cities = _db.cities.FirstOrDefault(x => x.Id == id);
-                PointOfInterest lastPoi = cities.pointOfInterests.FirstOrDefault(x => x.Id == poi.Id);
-                lastPoi = poi;
-                return Ok();
+                return NotFound();
             }
+            _db.Entry(lastPoi).CurrentValues.SetValues(poi);
+            return Ok();
+        }
 
-            [HttpDelete]
-            [Route("Delete/{id}")]
-            public IActionResult Delete(int cityId, int poiId)
+        [HttpPatch]
+        [Route ("Update/{cityId}/{poiId}")]
+        public IActionResult Patch (JsonPatchDocument<PointOfInterest> poiPatch, [FromRoute]int cityId, [FromRoute]int poiId)
+        {
+            var oldPoi = _db.cities.Include(x => x.pointOfInterests).FirstOrDefault(x => x.Id == cityId).pointOfInterests.FirstOrDefault(x => x.Id == poiId);
+            if (oldPoi is null)
             {
-            _db.cities.FirstOrDefault(x => x.Id == cityId).pointOfInterests.RemoveAll(x => x.Id == poiId);
-                return Ok();
+                return NotFound();
             }
-        
+            poiPatch.ApplyTo(oldPoi);
+            _db.Update(oldPoi);
+            _db.SaveChanges();
+            return Ok();
+        }
+
+        [HttpDelete]
+        [Route("Delete/{cityId}/{poiId}")]
+        public IActionResult Delete([FromRoute]int cityId, [FromRoute] int poiId)
+        {
+            var deadpoi = _db.cities.Include(x => x.pointOfInterests).FirstOrDefault(x => x.Id == cityId).pointOfInterests.FirstOrDefault(x => x.Id == poiId);
+            if (deadpoi is null)
+            {
+                return NotFound();
+            }
+            _db.poi.Remove(deadpoi);
+            _db.SaveChanges();
+
+            return Ok();
+        }
+
     }
 
 }
